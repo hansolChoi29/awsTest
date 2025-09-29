@@ -34,18 +34,19 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            cd /home/ec2-user || exit 1
-            [ -d awsTest/.git ] || git clone https://github.com/hansolChoi29/awsTest.git
-            cd awsTest
-            git pull --rebase origin main
-            chmod +x gradlew
-            ./gradlew clean bootJar -x test
-            pkill -f 'awsTest-0.0.1-SNAPSHOT.jar' || true
-            nohup java -jar build/libs/*-SNAPSHOT.jar \
+            set -e
+            APP_DIR="/home/ec2-user/awsTest"
+            LOG="/home/ec2-user/app.log"
+            JAR="$(ls -1t $APP_DIR/build/libs/*.jar | grep -v plain | head -n 1 || true)"
+            [ -z "${JAR:-}" ] && echo "no runnable JAR in $APP_DIR/build/libs" && exit 1
+
+            pkill -f "java.*$(basename "$JAR")" || true
+            nohup java -jar "$JAR" \
               --server.port=8080 \
               --spring.main.web-application-type=servlet \
               --spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration,org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration \
-              > /home/ec2-user/app.log 2>&1 &
+              > "$LOG" 2>&1 &
+
             sleep 3
-            pgrep -f 'awsTest-0.0.1-SNAPSHOT.jar' >/dev/null && echo "🚀 App started" || (tail -n 200 /home/ec2-user/app.log; exit 1)
-            exit 0
+            pgrep -f "$(basename "$JAR")" >/dev/null || (tail -n 200 "$LOG"; exit 1)
+            echo "OK"
